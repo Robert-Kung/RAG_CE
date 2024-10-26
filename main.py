@@ -53,9 +53,9 @@ SCRAPED_DATA_PATH = DATA_DIR / "scraped_data.json"
 # 設置常量
 ROOT_URL = 'https://www.coolenglish.edu.tw/'
 LOGIN_URL = 'https://www.coolenglish.edu.tw/login/index.php'
-USERNAME = '008'
-PASSWORD = '008'
-MAX_DEPTH = 6
+USERNAME = ''
+PASSWORD = ''
+MAX_DEPTH = 3
 OUTPUT_DIR = DATA_DIR / 'page_data'
 # VECTORSTORE_PATH = DATA_DIR / 'normal_page'
 
@@ -196,18 +196,88 @@ def setup_driver():
         print(f"Error in setup_driver: {str(e)}")
         raise
 
+def verify_login(driver):
+    """驗證是否成功登入"""
+    try:
+        # 根據登入後特有的元素來驗證，例如用戶名稱或個人資料連結
+        # 這裡需要根據實際網站修改選擇器
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "usertext"))
+        )
+        return True
+    except:
+        return False
+
+# 登入coolies存取
+def save_cookies(driver, path):
+    """保存cookies到文件"""
+    with open(path, 'wb') as file:
+        json.dump(driver.get_cookies(), file)
+
+def load_cookies(driver, path):
+    """從文件加載cookies"""
+    try:
+        with open(path, 'rb') as file:
+            cookies = json.load(file)
+            for cookie in cookies:
+                driver.add_cookie(cookie)
+        return True
+    except:
+        return False
+
 # 解決登入問題
 def login(driver):
+    cookies_path = "./data/cookies.json"
+    
     try:
+        # 首先嘗試使用已保存的cookies
+        if os.path.exists(cookies_path):
+            driver.get(ROOT_URL)  # 先訪問主域名
+            if load_cookies(driver, cookies_path):
+                driver.get(ROOT_URL)  # 加載cookies後重新訪問
+                if verify_login(driver):
+                    print("使用已保存的cookies成功登入")
+                    return True
+
+        # 如果cookies無效，執行正常登入流程
+        print("開始新的登入流程...")
         driver.get(LOGIN_URL)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))
-        driver.find_element(By.ID, "username").send_keys(USERNAME)
-        driver.find_element(By.ID, "password").send_keys(PASSWORD)
-        driver.find_element(By.ID, "loginbtn").click()
+        
+        # 等待登入表單加載
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+
+        # 清除可能的舊數據
+        username_field = driver.find_element(By.ID, "username")
+        password_field = driver.find_element(By.ID, "password")
+        username_field.clear()
+        password_field.clear()
+
+        # 輸入登入信息
+        username_field.send_keys(USERNAME)
+        password_field.send_keys(PASSWORD)
+
+        # 點擊登入按鈕
+        login_button = driver.find_element(By.ID, "loginbtn")
+        login_button.click()
+
+        # 等待登入完成
         WebDriverWait(driver, 10).until(EC.url_contains("index"))
+
+        # 驗證登入狀態
+        if verify_login(driver):
+            print("登入成功")
+            # 保存新的cookies
+            save_cookies(driver, cookies_path)
+            return True
+        else:
+            print("登入可能失敗，請檢查")
+            return False
+
     except Exception as e:
-        print(f"Error in login: {str(e)}")
-        raise
+        print(f"登入過程中出現錯誤: {str(e)}")
+        return False
 
 
 def clean_content(content):
@@ -309,10 +379,12 @@ def crawl_website():
 
     try:
         driver = setup_driver()
-        print("開始登錄...")
-        login(driver)
-        print("登錄成功")
-        print(f"開始爬取網站: {ROOT_URL}")
+        
+        # 執行登入並驗證
+        login_success = login(driver)
+        if not login_success:
+            print("登入失敗，停止爬取")
+            return []
 
         while url_queue:
             current_url, depth, parent_url = url_queue.popleft()
@@ -330,7 +402,7 @@ def crawl_website():
                 pages.append(page)
                 
                 for child_url in page.child_urls:
-                    if child_url not in visited_urls:
+                    if child_url not in visited_urls and page.depth < MAX_DEPTH:
                         url_queue.append((child_url, depth + 1, current_url))
         
         print(f"爬取完成，共爬取了 {len(pages)} 個頁面")
@@ -572,6 +644,20 @@ cleanup_thread.start()
 
 
 # 定義 API 路由
+@app.route('/api/login', methods=['GET'])
+def web_login():
+    
+    driver = setup_driver()
+    driver.get(LOGIN_URL)
+    cookie = driver.get_cookies()
+    with open('./data/cookies.json', 'w') as f:
+        f.write(json.dumps(cookie))
+
+    with open('./data/cookies.json', 'r') as f:
+        data = json.loads(f.read())
+    
+    return data
+
 @app.route('/api/start-scraping', methods=['GET'])
 def start_scraping():
     
