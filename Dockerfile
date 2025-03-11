@@ -27,4 +27,4 @@ COPY . /app
 EXPOSE 5000
 
 # 運行應用
-CMD ["python", "main.py"]
+CMD ["python", "api.py"]
