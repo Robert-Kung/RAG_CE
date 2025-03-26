@@ -15,14 +15,15 @@ from flask_cors import CORS
 from crawler import WebsiteCrawler, WebPage
 from rag_chatbot import RAGChatbot, DocumentProcessor
 from db import DatabaseManager
-
+from dotenv import load_dotenv
 
 # 配置讀取
 config = configparser.ConfigParser()
 config.read('./config.ini')
-
+load_dotenv()
 # 環境變數
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') or config['openai']['api_key']
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+
 ROOT_URL = 'https://www.coolenglish.edu.tw/'
 LOGIN_URL = 'https://www.coolenglish.edu.tw/login/index.php'
 USERNAME = os.environ.get('WEBSITE_USERNAME') or config['user']['username']
